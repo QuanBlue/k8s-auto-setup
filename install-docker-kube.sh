@@ -1,5 +1,6 @@
 #?/bin/bash
 # ref: https://www.cherryservers.com/blog/install-kubernetes-on-ubuntu
+export DEBIAN_FRONTEND=noninteractive
 
 # install net tools
 sudo apt-get install net-tools -y
@@ -11,16 +12,16 @@ swapoff -a
 # install kubelet, kubeadm, kubectl
 sudo mkdir /etc/apt/keyrings
 curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
-sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+sudo apt-get update -y && sudo apt-get install -y apt-transport-https curl
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-sudo apt-get update && sudo apt-get install -y kubelet=1.26.5-00 kubeadm=1.26.5-00 kubectl=1.26.5-00
+sudo apt-get update -y && sudo apt-get install -y kubelet=1.26.5-00 kubeadm=1.26.5-00 kubectl=1.26.5-00
 
 # install Docker
-sudo apt-get install apt-transport-https ca-certificates curl software-properties-common -y
+sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
 apt-cache policy docker-ce
-sudo apt-get install docker-ce -y
+sudo apt-get install -y docker-ce
 sudo usermod -aG docker ${USER}
 
 # configure containerd on all nodes to ensure its compatibility with Kubernetes

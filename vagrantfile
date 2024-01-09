@@ -1,6 +1,10 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+# Load environment variables from env.sh
+env_file = File.join(File.dirname(__FILE__), 'env.sh')
+load(env_file) if File.exist?(env_file)
+
 IMAGE_NAME = "generic/ubuntu2004"
 DEFAULT_CPU = 2
 DEFAULT_MEMORY = 2048
@@ -19,12 +23,15 @@ Vagrant.configure("2") do |config|
    config.vm.box = IMAGE_NAME
    config.vm.hostname = "master"
    config.env.enable # Enable vagrant-env(.env)
+	config.vm.synced_folder "shared", "/root/shared" # share pods folder
    config.vm.provider "virtualbox" do |vb|
       vb.cpus = DEFAULT_CPU
       vb.memory = DEFAULT_MEMORY
    end
+   
    # set up docker-kube
    config.vm.provision "shell", path: "./install-docker-kube.sh"
+   
    # Set up SSH
    config.vm.provision "shell", inline: <<-SHELL
       # username: root - pass: 123
@@ -35,20 +42,36 @@ Vagrant.configure("2") do |config|
       
 
    # ------------------------------------------------------
-   # -------------------- Master VM ------------------
+   # ----------------------- Master VM --------------------
    # ------------------------------------------------------
    config.vm.define MASTER_NAME do |master|
       master.vm.network "private_network", ip: "#{IP_BASE}#{10}"
       master.vm.hostname = MASTER_NAME
-      master.vm.synced_folder "pods", "/root/pods" # share pods folder
       master.vm.provider "virtualbox" do |vbox|
          vbox.name = MASTER_NAME
       end
+
+      # set up cluster
+      master.vm.provision "shell", inline: <<-SHELL
+         # use Calico network plugin -> pod network cidr = 192.168.0.0/16
+         kubeadm init --apiserver-advertise-address=#{IP_BASE}#{10} --pod-network-cidr=192.168.0.0/16
+         
+         # set up k8s configuration
+         mkdir -p $HOME/.kube
+         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+         sudo chown $(id -u):$(id -g) $HOME/.kube/config
+         
+         # set up Calico network plugin
+         kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/master/manifests/calico.yaml
+
+         # get join token for worker nodes
+         kubeadm token create --print-join-command > /root/shared/join-command.txt
+      SHELL
    end
 
 
    # ------------------------------------------------------
-   # -------------------- Worker VM ------------------
+   # ----------------------- Worker VM --------------------
    # ------------------------------------------------------
    (1..WORKER_NUM).each do |i|
       vm_name = "#{WORKER_NAME_PREFIX}#{i}"
@@ -57,8 +80,14 @@ Vagrant.configure("2") do |config|
          worker.vm.network "private_network", ip: "#{IP_BASE}#{i + 10}"
          worker.vm.hostname = vm_name
          worker.vm.provider "virtualbox" do |vbox|
-         vbox.name = vm_name
-         end      
-      end
+            vbox.name = vm_name
+         end
+
+			# join cluster
+			worker.vm.provision "shell", inline: <<-SHELL
+				# read the join token and execute it
+				$(cat /root/shared/join-command.txt)
+			SHELL
+      end   
    end
 end
