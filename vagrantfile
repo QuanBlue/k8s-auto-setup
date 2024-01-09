@@ -1,35 +1,64 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# Tạo máy ảo từ box centos/7, gán địa chỉ IP, đặt hostname, gán 2GB bộ nhớ, 2 cpus  
-Vagrant.configure("2") do |config|
-  config.vm.box = "generic/ubuntu2004"
-  config.vm.network "private_network", type: "dhcp"   # assign an IP address automatically
-  config.vm.hostname = "master"
+IMAGE_NAME = "generic/ubuntu2004"
+DEFAULT_CPU = 2
+DEFAULT_MEMORY = 2048
+IP_BASE =  "192.168.56."
 
-  config.vm.provider "virtualbox" do |vb|
-     vb.name = "master"
-     vb.cpus = 2
-     vb.memory = "2048"
-  end
-  
-#   # Chạy file install-docker-kube.sh sau khi nạp Box
-#   config.vm.provision "shell", path: "./install-docker-kube.sh"
+MASTER_NAME = ENV['MASTER_NAME'] || "master"
 
-  # Chạy các lệnh shell
-  config.vm.provision "shell", inline: <<-SHELL
-    # Đặt pass 123 có tài khoản root và cho phép SSH
-    echo "root:123" | chpasswd
-    sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-    systemctl reload sshd
+WORKER_NAME_PREFIX = ENV['WORKER_NAME_PREFIX'] || "worker"
+WORKER_NUM = (ENV['WORKER_NUM'] || 3).to_i
 
 
-    # Ghi nội dung sau ra file /etc/hosts để truy cập được các máy theo HOSTNAME
-cat >>/etc/hosts<<EOF
-172.16.10.100 master.xtl
-172.16.10.101 worker1.xtl
-172.16.10.102 worker2.xtl
-EOF
+Vagrant.configure("2") do |config|  
+   # ------------------------------------------------------
+   # --------------- Default configurations ---------------
+   # ------------------------------------------------------
+   config.vm.box = IMAGE_NAME
+   config.vm.hostname = "master"
+   config.env.enable # Enable vagrant-env(.env)
+   config.vm.provider "virtualbox" do |vb|
+      vb.cpus = DEFAULT_CPU
+      vb.memory = DEFAULT_MEMORY
+   end
+   # set up docker-kube
+   config.vm.provision "shell", path: "./install-docker-kube.sh"
+   # Set up SSH
+   config.vm.provision "shell", inline: <<-SHELL
+      # username: root - pass: 123
+      echo "root:123" | chpasswd
+      sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+      systemctl reload sshd
+   SHELL
+      
 
-  SHELL
+   # ------------------------------------------------------
+   # -------------------- Master VM ------------------
+   # ------------------------------------------------------
+   config.vm.define MASTER_NAME do |master|
+      master.vm.network "private_network", ip: "#{IP_BASE}#{10}"
+      master.vm.hostname = MASTER_NAME
+      master.vm.synced_folder "pods", "/root/pods" # share pods folder
+      master.vm.provider "virtualbox" do |vbox|
+         vbox.name = MASTER_NAME
+      end
+   end
+
+
+   # ------------------------------------------------------
+   # -------------------- Worker VM ------------------
+   # ------------------------------------------------------
+   (1..WORKER_NUM).each do |i|
+      vm_name = "#{WORKER_NAME_PREFIX}#{i}"
+      
+      config.vm.define vm_name do |worker|
+         worker.vm.network "private_network", ip: "#{IP_BASE}#{i + 10}"
+         worker.vm.hostname = vm_name
+         worker.vm.provider "virtualbox" do |vbox|
+         vbox.name = vm_name
+         end      
+      end
+   end
 end
