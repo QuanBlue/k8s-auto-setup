@@ -1,10 +1,6 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-# Load environment variables from env.sh
-env_file = File.join(File.dirname(__FILE__), 'env.sh')
-load(env_file) if File.exist?(env_file)
-
 IMAGE_NAME = "generic/ubuntu2004"
 DEFAULT_CPU = 2
 DEFAULT_MEMORY = 2048
@@ -21,7 +17,7 @@ Vagrant.configure("2") do |config|
    # --------------- Default configurations ---------------
    # ------------------------------------------------------
    config.vm.box = IMAGE_NAME
-   config.vm.hostname = "master"
+   config.vm.hostname = MASTER_NAME
    config.env.enable # Enable vagrant-env(.env)
 	config.vm.synced_folder "shared", "/root/shared" # share pods folder
    config.vm.provider "virtualbox" do |vb|
@@ -45,16 +41,18 @@ Vagrant.configure("2") do |config|
    # ----------------------- Master VM --------------------
    # ------------------------------------------------------
    config.vm.define MASTER_NAME do |master|
-      master.vm.network "private_network", ip: "#{IP_BASE}#{10}"
+      ipv4=IP_BASE + "10"
+      
+      master.vm.network "private_network", ip: "#{ipv4}"
       master.vm.hostname = MASTER_NAME
       master.vm.provider "virtualbox" do |vbox|
          vbox.name = MASTER_NAME
       end
 
-      # set up cluster
       master.vm.provision "shell", inline: <<-SHELL
+         # --------- set up cluster ---------
          # use Calico network plugin -> pod network cidr = 192.168.0.0/16
-         kubeadm init --apiserver-advertise-address=#{IP_BASE}#{10} --pod-network-cidr=192.168.0.0/16
+         kubeadm init --apiserver-advertise-address=#{ipv4} --pod-network-cidr=192.168.0.0/16
          
          # set up k8s configuration
          mkdir -p $HOME/.kube
@@ -66,6 +64,11 @@ Vagrant.configure("2") do |config|
 
          # get join token for worker nodes
          kubeadm token create --print-join-command > /root/shared/join-command.txt
+
+         # --------- fix network interface - error: add node have same Internal IP ---------
+         echo 'Environment="KUBELET_EXTRA_ARGS=--node-ip=#{ipv4}"' >> /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+         systemctl daemon-reload
+         systemctl restart kubelet
       SHELL
    end
 
@@ -75,18 +78,24 @@ Vagrant.configure("2") do |config|
    # ------------------------------------------------------
    (1..WORKER_NUM).each do |i|
       vm_name = "#{WORKER_NAME_PREFIX}#{i}"
-      
+      ipv4=IP_BASE + "#{10 + i}"
+
       config.vm.define vm_name do |worker|
-         worker.vm.network "private_network", ip: "#{IP_BASE}#{i + 10}"
+         worker.vm.network "private_network", ip: "#{ipv4}"
          worker.vm.hostname = vm_name
          worker.vm.provider "virtualbox" do |vbox|
             vbox.name = vm_name
          end
 
-			# join cluster
 			worker.vm.provision "shell", inline: <<-SHELL
+            # --------- join cluster ---------
 				# read the join token and execute it
 				$(cat /root/shared/join-command.txt)
+
+            # --------- fix network interface - error: add node have same Internal IP ---------
+            echo 'Environment="KUBELET_EXTRA_ARGS=--node-ip=#{ipv4}"' >> /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+            systemctl daemon-reload
+            systemctl restart kubelet
 			SHELL
       end   
    end
