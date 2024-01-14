@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+   name: nginx-with-volume
+   labels:
+      app: nginxapp
+spec:
+   volumes:
+      # define the volume
+      # map the hostPath from the Node to the mountPath in container
+      - name: nginx-vol
+        hostPath:
+           path: /home/html
+   containers:
+      - name: n1
+        image: nginx
+        resources:
+           limits:
+              memory: "128Mi"
+              cpu: "100m"
+        ports:
+           - containerPort: 80
+        volumeMounts:
+           - name: nginx-vol
+             mountPath: /usr/share/nginx/html

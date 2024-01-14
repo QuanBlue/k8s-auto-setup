@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+   name: deploymentset-app
+spec:
+   replicas: 3
+   selector:
+      matchLabels:
+         app: dapp
+   template:
+      metadata:
+         name: dapp
+         labels:
+            app: dapp
+      spec:
+         containers:
+            - name: nginx
+              image: nginx:latest
+              resources:
+                 limits:
+                    memory: "128Mi"
+                    cpu: "100m"
+              ports:
+                 - containerPort: 8080

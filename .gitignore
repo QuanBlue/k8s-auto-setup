@@ -1,3 +1,5 @@
 .vagrant/
 
 shared/join-command.txt
+
+**.log
